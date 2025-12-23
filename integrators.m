@@ -1,5 +1,22 @@
 function [tp, pos, vel] = eulode_phys(acc, tspan, pos0, vel0, h)
 
+% Inspired by the general Euler scheme in Chapra & Canale. This code
+% is adapted as a first-order semi-symplectic Euler-Cromer method for 
+% second-order systems, providing long-term reliable behavior in the
+% numerical integration of trajectories.
+
+% Input:
+% acc   - acceleration function: a(x,v)
+% pos0  - initial position vector (Nx1)
+% vel0  - initial velocity vector (Nx1)
+% tspan - output times interval [t0, tf]
+% h     - internal integration step
+
+% Output:
+% tp   - vector of independent variable (time)
+% pos  - matrix of positions, rows = times, columns = dimensions
+% vel  - matrix of velocities, rows = times, columns = dimensions
+
 if nargin < 5
     error('At least 5 input arguments required');
 end
@@ -43,6 +60,23 @@ end
 
 
 function [tp, pos, vel] = rk4sys_phys(acc, tspan, pos0, vel0, h)
+
+% Inspired by the general RK4 scheme in Chapra & Canale. This code 
+% applies the general non-symplectic 4th-order Runge-Kutta method
+% to second-order systems in physics, providing high local accuracy
+% for short-term integration of positions and velocities.
+
+% Input:
+% acc   - acceleration function: a(x,v)
+% pos0  - initial position vector (Nx1)
+% vel0  - initial velocity vector (Nx1)
+% tspan - vector of output times
+% h     - internal integration step
+
+% Output:
+% tp  - vector of independent variable (time)
+% pos - matrix of positions, rows = times, columns = dimensions
+% vel - matrix of velocities, rows = times, columns = dimensions
 
 if nargin < 5
     error('At least 5 input arguments required');
@@ -107,6 +141,22 @@ end
 
 
 function [tp, pos, vel] = velverlet_phys(acc, tspan, pos0, vel0, h)
+
+% This code implements the symplectic Velocity Verlet integrator for 
+% second-order systems, providing high consistency for long-term 
+% simulations while maintaining moderate local accuracy.
+
+% Input:
+% acc   - acceleration function: a(x,v)
+% pos0  - initial position vector (Nx1)
+% vel0  - initial velocity vector (Nx1)
+% tspan - output times interval [t0, tf]
+% h     - internal integration step
+
+% Output:
+% tp   - vector of independent variable (time)
+% pos  - matrix of positions, rows = times, columns = dimensions
+% vel  - matrix of velocities, rows = times, columns = dimensions
 
 if nargin < 5
     error('At least 5 input arguments required');
