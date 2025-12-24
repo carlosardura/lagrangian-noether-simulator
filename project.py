@@ -2,16 +2,14 @@ import numpy as np
 import sympy as sp
 from integrators import eulode_phys, rk4sys_phys, velverlet_phys
 import csv
+import sys
 
 # ---------- classes and functions ----------
 
 t = sp.symbols('t')
-x = sp.Function('x')(t)
-y = sp.Function('y')(t)
-vx = sp.diff(x, t)
-vy = sp.diff(y, t)
-ax = sp.diff(x, t, 2)
-ay = sp.diff(y, t, 2)
+x, y = sp.Function('x')(t), sp.Function('y')(t)
+vx, vy = sp.diff(x, t), sp.diff(y, t)
+ax, ay = sp.diff(x, t, 2), sp.diff(y, t, 2)
 
 class Particle:
     """
@@ -48,46 +46,16 @@ def select_particle(p_name):
                 raise ValueError("Particle not found")
 
 
-def select_potential():
+def select_potential(k=1.0, kx=1.0, ky=2.0, G=1.0, M=1.0, epsilon=1e-6, alpha=1.0):
     """
     Allows the user to select a potential function for the simulation.
     Returns a symbolic potential, with k, G and M equal to 1 for simplicity.
     """
-    def V_harmonic(k=1.0):
-        """
-        2D simple harmonic oscillator.
-        k: spring constant
-        """
-        return 0.5 * k * (x**2 + y**2)
-
-    def V_anisotropic(kx=1.0, ky=2.0):
-        """
-        2D anisotropic harmonic oscillator.
-        kx, ky: spring constants in x and y
-        """
-        return 0.5 * (kx * x ** 2 + ky * y ** 2)
-    
-    def V_kepler(G=1.0, M=1.0, epsilon=1e-6):
-        """
-        Keplerian potential avoiding singularity in r=0.
-        G: gravitational constant
-        M: central mass
-        """
-        r = sp.sqrt(x**2 + y**2 + epsilon**2)
-        return -G * M / r
-    
-    def V_noncentral(alpha=1.0):
-        """
-        Simple noncentral potential.
-        alpha: coupling constant
-        """
-        return alpha * x * y
-    
     potentials = {
-        "1. Simple Harmonic Oscillator": V_harmonic,
-        "2. Anisotropic Harmonic Oscillator": V_anisotropic,
-        "3. Keplerian": V_kepler,
-        "4. Noncentral": V_noncentral,
+        "1. Simple Harmonic Oscillator": 0.5 * k * (x**2 + y**2),
+        "2. Anisotropic Harmonic Oscillator": 0.5 * (kx * x ** 2 + ky * y ** 2),
+        "3. Keplerian": -G * M / sp.sqrt(x**2 + y**2 + epsilon**2),
+        "4. Noncentral": alpha * x * y,
     }
 
     print("Available potentials:")
@@ -167,17 +135,40 @@ def energies_over_time(particle, pos_array, vel_array):
 # ---------- main function ----------
 
 def main():
+    h = float(sys.argv[1])
+    if len(sys.argv) == 3:
+        t0 = 0.0
+        tf = float(sys.argv[2])
+    elif len(sys.argv) == 4:
+        t0 = float(sys.argv[2])
+        tf = float(sys.argv[3])
+    else:
+        sys.exit("Introduce python project.py h tf or python project.py h t0 tf")
+    tspan = (t0, tf)
+
     p_name = input("Select a particle: ").strip().lower()
     p_data = select_particle(p_name)
-    V_sym = select_potential()()
+
+    V_sym = select_potential()
+
+    try:
+        r0 = list(map(float, input("Introduce r0: ").replace(" ", "").split(",")))
+        v0 = list(map(float, input("Introduce v0: ").replace(" ", "").split(",")))
+    except ValueError:
+        sys.exit("Invalid format.")
+    
+    if len(r0) != 2 or len(v0) != 2:
+        sys.exit("Introduce exactly two values for position and velocity.")
 
     p = Particle(
         name = p_data["name"],
         mass = p_data["mass"],
-        position = 0,
-        velocity = 0,
+        position = r0,
+        velocity = v0,
         V_sym = V_sym,
     )
+
+    results = run_simulation(p, tspan, h)
 
 
 if __name__ == "__main__":
