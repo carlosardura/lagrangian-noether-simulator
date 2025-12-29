@@ -21,11 +21,11 @@ class Particle:
     def __init__(self, name, mass, V_sym, position=None, velocity=None):
         self.name = name
         self.mass = mass
-        self.T_sym = 0.5 * self.mass *(sp.diff(x,t)**2 + sp.diff(y,t)**2)
+        self.T_sym = 0.5 * self.mass *(vx**2 + vy**2)
         self.V_sym = V_sym
         self.position = np.array(position, dtype=float)
         self.velocity = np.array(velocity, dtype=float)
-        self.acceleration = euler_lagrange_equations(self)
+        self.acceleration, self.conserved = euler_lagrange_equations(self)
 
 
 def select_particle():
@@ -55,7 +55,7 @@ def select_potential(k=1e-29, kx=1e-29, ky=2e-29, G=1e-11, M=1.0, epsilon=1e-6, 
         "1. Simple Harmonic Oscillator": 0.5 * k * (x**2 + y**2),
         "2. Anisotropic Harmonic Oscillator": 0.5 * (kx * x**2 + ky * y**2),
         "3. Keplerian": -G * M / sp.sqrt(x**2 + y**2 + epsilon**2),
-        "4. Noncentral": alpha * x**2 * y,
+        "4. Noncentral": alpha * x * y,
         "5. Free particle": 0,
     }
 
@@ -100,8 +100,23 @@ def euler_lagrange_equations(self):
     Calculates a symbolic lagrangian expression (L=T-V), then calculates the 
     Euler-Lagrange equations for each coordinate and returns the acceleracion 
     array as numeric expressions.
+
+    Addionality, analyzes the lagrangian dependence with respect to specific
+    values for a further conservation study.
     """
     L_sym = self.T_sym - self.V_sym
+
+    def noether():
+        x, y, theta = sp.symbols('x y theta')
+      # conserved = [E, px, py, Lz]
+        conserved = [
+            sp.simplify(sp.diff(L_sym, t)) == 0,
+            sp.simplify(sp.diff(L_sym, x)) == 0,
+            sp.simplify(sp.diff(L_sym, y)) == 0,
+            sp.simplify(sp.diff(sp.simplify(L_sym.subs({x: x*sp.cos(theta) - y*sp.sin(theta),
+                                                        y: x*sp.sin(theta) + y*sp.cos(theta)})), theta).subs(theta, 0)) == 0
+            ]
+        return conserved
 
     ELx = sp.diff(sp.diff(L_sym, sp.diff(x,t)), t) - sp.diff(L_sym, x)
     ELy = sp.diff(sp.diff(L_sym, sp.diff(y,t)), t) - sp.diff(L_sym, y)
@@ -112,7 +127,7 @@ def euler_lagrange_equations(self):
     def acceleration(pos, vel):
         return np.array(acc(pos[0], pos[1], vel[0], vel[1]), dtype=float)
 
-    return acceleration
+    return acceleration, noether()
 
 
 def run_simulation(particle, tspan, h):
@@ -148,10 +163,17 @@ def run_simulation(particle, tspan, h):
     return results
 
 
-def graphs(dict, title, xdata, ydata, xcol, ycol, xlabel, ylabel):
+def graphs(dict, title, xdata, ydata, xcol, ycol, xlabel, ylabel, conserved):
     """
     Generates a generic 2x2 plot template to compare the results obtained from the 
     different numerical integration methods.
+
+    The first three panels show the evolution of the selected quantities for each 
+    integration method, while the fourth one is designed for error analysis. If the 
+    quantity is conserved according to Noether's theorem, the last panel will show 
+    the conservation error with respect to its initial value. Otherwise, it shows the 
+    deviation error between methods over time, displaying their absolute error and 
+    its mean for a numerical accuracy study.
     """
     methods = list(dict.keys())
     colors = ["#FFD000", "#FF0000", "#222ED5",
@@ -195,23 +217,33 @@ def graphs(dict, title, xdata, ydata, xcol, ycol, xlabel, ylabel):
         if len(ydata) > 1:
             axs[i].legend()
 
-    axs[3].set_title("Error")
-    axs[3].grid(True)
+
     t = dict[methods[0]]["t"]
 
-    for i in range(len(methods)):
-        for j in range(i+1, len(methods)):
-            method1 = dict[methods[i]][ydata[0]]
-            method2 = dict[methods[j]][ydata[0]]
+    if conserved:
+        for k, ykey in enumerate(ydata):
+            axs[3].set_title(f"Conservation error in {ydata[0]}")
+            for method in methods:
+                y = dict[method][ykey]
+                yj = ycol[0] if len(ycol) > 1 else ycol
+                if y.ndim > 1: y = y[:, yj]
+                err = y - y[0]
+                axs[3].plot(t, err, color=colors[k], label=f"{ykey} error with {method}")
+    else:
+        axs[3].set_title(f"Method-to-method deviation in {ydata[0]}")
+        for i in range(len(methods)):
+           for j in range(i+1, len(methods)):
+                method1 = dict[methods[i]][ydata[0]]
+                method2 = dict[methods[j]][ydata[0]]
 
-            if method1.ndim != 1:
-                method1 = method1[:, ycol]
-            if method2.ndim != 1:
-                method2 = method2[:, ycol]
+                if method1.ndim != 1: method1 = method1[:, ycol]
+                if method2.ndim != 1: method2 = method2[:, ycol]
 
-            err = np.abs(method1 - method2)
-            axs[3].plot(t, err, color=colors[i + j + 8], label=f"{methods[i]} vs {methods[j]}")
+                abs_err = np.abs(method1 - method2)
+                mean_abs_err = np.mean(abs_err)
+                axs[3].plot(t, abs_err, color=colors[i + j + 8], label=rf"{methods[i]} vs {methods[j]}: $\vec{{\epsilon}}(t)$ = {mean_abs_err:.6e}" )
 
+    axs[3].grid(True)
     axs[3].set_xlabel("t")
     axs[3].set_ylabel("Error")
     axs[3].legend()
@@ -233,7 +265,7 @@ def main():
     else:
         sys.exit("Introduce 'python project.py h tf' or 'python project.py h t0 tf'")
     tspan = (t0, tf)
-
+       
     p_name, p_mass = select_particle()
     V_sym = select_potential()
 
@@ -262,7 +294,7 @@ def main():
         except ValueError:
             print("Invalid format.")
             continue
-       
+
     p = Particle(
         name = p_name,
         mass = p_mass,
@@ -273,14 +305,14 @@ def main():
 
     results = run_simulation(p, tspan, h)
     
-    titles = ["Orbit y(x)", "Energies over time", "Phase-space", "Angular momentum over time"]
+    titles = ["Trajectory y(x)", "Energies over time", "Phase-space", "Angular momentum over time"]
     Exdata, Eydata = ["t", "t", "t"], ["E(t)", "V(t)", "T(t)"]
     pxdata, pydata, pxcol, pycol = ["pos", "pos"], ["px", "py"], [0, 1], [0, 1] 
 
-    graphs(results, titles[0], ["pos"], ["pos"], [0], [1], "x", "y(x)")
-    graphs(results, titles[1], Exdata, Eydata, [0], [0], "t", "Energies")
-    graphs(results, titles[2], pxdata, pydata, pxcol, pycol, "x, y", "px, py")
-    graphs(results, titles[3], ["t"], ["L"], [0], [0], "t", "L(t)")
+    graphs(results, titles[0], ["pos"], ["pos"], [0], [1], "x", "y(x)", p.conserved[0])
+    graphs(results, titles[1], Exdata, Eydata, [0], [0], "t", "Energies", p.conserved[1])
+    graphs(results, titles[2], pxdata, pydata, pxcol, pycol, "x, y", "px, py", p.conserved[2])
+    graphs(results, titles[3], ["t"], ["L"], [0], [0], "t", "Lz", p.conserved[3])
 
 if __name__ == "__main__":
     main()
