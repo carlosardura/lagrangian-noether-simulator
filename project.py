@@ -21,12 +21,11 @@ class Particle:
     def __init__(self, name, mass, V_sym, position=None, velocity=None):
         self.name = name
         self.mass = mass
-        self.T_sym = 0.5 * self.mass *(vx**2 + vy**2)
+        self.T_sym = 0.5 * self.mass * (sp.Derivative(x, t)**2 + sp.Derivative(y, t)**2)
         self.V_sym = V_sym
         self.position = np.array(position, dtype=float)
         self.velocity = np.array(velocity, dtype=float)
         self.acceleration, self.conserved = euler_lagrange_equations(self)
-
 
 def select_particle():
     """
@@ -107,16 +106,17 @@ def euler_lagrange_equations(self):
     L_sym = self.T_sym - self.V_sym
 
     def noether():
-        x, y, theta = sp.symbols('x y theta')
+        x2, y2, theta = sp.symbols('x y theta')
+        L2 = L_sym.subs({x: x2, y: y2})
       # conserved = [E, px, py, Lz]
         conserved = [
-            sp.simplify(sp.diff(L_sym, t)) == 0,
-            sp.simplify(sp.diff(L_sym, x)) == 0,
-            sp.simplify(sp.diff(L_sym, y)) == 0,
-            sp.simplify(sp.diff(sp.simplify(L_sym.subs({x: x*sp.cos(theta) - y*sp.sin(theta),
-                                                        y: x*sp.sin(theta) + y*sp.cos(theta)})), theta).subs(theta, 0)) == 0
+            sp.simplify(sp.diff(L2, t)) == 0,
+            sp.simplify(sp.diff(L2, x2)) == 0,
+            sp.simplify(sp.diff(L2, y2)) == 0,
+            sp.simplify(sp.diff(sp.simplify(L2.subs({x2: x2*sp.cos(theta) - y2*sp.sin(theta),
+                                                     y2: x2*sp.sin(theta) + y2*sp.cos(theta)})), theta).subs(theta, 0)) == 0
             ]
-        return conserved
+        return np.array([bool(j) for j in conserved], dtype=bool)
 
     ELx = sp.diff(sp.diff(L_sym, sp.diff(x,t)), t) - sp.diff(L_sym, x)
     ELy = sp.diff(sp.diff(L_sym, sp.diff(y,t)), t) - sp.diff(L_sym, y)
@@ -127,7 +127,7 @@ def euler_lagrange_equations(self):
     def acceleration(pos, vel):
         return np.array(acc(pos[0], pos[1], vel[0], vel[1]), dtype=float)
 
-    return acceleration, noether()
+    return acceleration, noether
 
 
 def run_simulation(particle, tspan, h):
@@ -152,12 +152,12 @@ def run_simulation(particle, tspan, h):
     L_vv = particle.mass * (pos_vv[:,0]*vel_vv[:,1] - pos_vv[:,1]*vel_vv[:,0])
 
     results = {
-        "Euler-Cromer":    {"t": tp_e, "pos": pos_e, "vel": vel_e, "T(t)": T_e,  
-                            "V(t)": V_e,  "E(t)": E_e, "px": px_e, "py": py_e, "L": L_e},
-        "Runge-Kutta 4":   {"t": tp_rk, "pos": pos_rk, "vel": vel_rk, "T(t)": T_rk,
-                            "V(t)": V_rk, "E(t)": E_rk, "px": px_rk, "py": py_rk, "L": L_rk},
-        "Velocity Verlet": {"t": tp_vv, "pos": pos_vv, "vel": vel_vv, "T(t)": T_vv,
-                            "V(t)": V_vv, "E(t)": E_vv, "px": px_vv, "py": py_vv, "L": L_vv}
+        "Euler-Cromer":    {"t": tp_e, "pos": pos_e, "vel": vel_e, "T": T_e,  
+                            "V": V_e,  "E": E_e, "px": px_e, "py": py_e, "Lz": L_e},
+        "Runge-Kutta 4":   {"t": tp_rk, "pos": pos_rk, "vel": vel_rk, "T": T_rk,
+                            "V": V_rk, "E": E_rk, "px": px_rk, "py": py_rk, "Lz": L_rk},
+        "Velocity Verlet": {"t": tp_vv, "pos": pos_vv, "vel": vel_vv, "T": T_vv,
+                            "V": V_vv, "E": E_vv, "px": px_vv, "py": py_vv, "Lz": L_vv}
     }
 
     return results
@@ -178,8 +178,8 @@ def graphs(dict, title, xdata, ydata, xcol, ycol, xlabel, ylabel, conserved):
     methods = list(dict.keys())
     colors = ["#FFD000", "#FF0000", "#222ED5",
               "#AB8901", "#9B0000", "#00058F",
-              "#FFE375", "#FF7A7A", "#2380F9",
-              "#F76700", "#15A215", "#6F2885"]
+              "#FFE375", "#FF7A7A", "#368BFB",
+              "#FF6F08", "#00C500", "#8900D3"]
     fig, axs = plt.subplots(2, 2, figsize=(12, 10))
     axs = axs.flatten()
 
@@ -204,8 +204,8 @@ def graphs(dict, title, xdata, ydata, xcol, ycol, xlabel, ylabel, conserved):
             for j, (xkey, ykey) in enumerate(zip(xdata, ydata)):
                 x = dict[method][xkey]
                 y = dict[method][ykey]
-                xj = xcol[j] if len(xcol) > 1 else xcol
-                yj = ycol[j] if len(ycol) > 1 else ycol
+                xj = xcol[j] if len(xcol) > 1 else xcol[0]
+                yj = ycol[j] if len(ycol) > 1 else ycol[0]
                 if x.ndim > 1: x = x[:, xj]
                 if y.ndim > 1: y = y[:, yj]
                 axs[i].plot(x, y, color=colors[3 * j + i], label=ykey)
@@ -221,16 +221,14 @@ def graphs(dict, title, xdata, ydata, xcol, ycol, xlabel, ylabel, conserved):
     t = dict[methods[0]]["t"]
 
     if conserved:
-        for k, ykey in enumerate(ydata):
-            axs[3].set_title(f"Conservation error in {ydata[0]}")
-            for method in methods:
-                y = dict[method][ykey]
-                yj = ycol[0] if len(ycol) > 1 else ycol
-                if y.ndim > 1: y = y[:, yj]
-                err = y - y[0]
-                axs[3].plot(t, err, color=colors[k], label=f"{ykey} error with {method}")
+        axs[3].set_title(f"Conservation error in {ydata[0]}")
+        for k, method in enumerate(methods):
+            y = dict[method][ydata[0]]
+            if y.ndim > 1: y = y[:, ycol[0]]
+            err = y - y[0]
+            axs[3].plot(t, err, color=colors[k], label={method})
     else:
-        axs[3].set_title(f"Method-to-method deviation in {ydata[0]}")
+        axs[3].set_title(f"Method-to-method deviation")
         for i in range(len(methods)):
            for j in range(i+1, len(methods)):
                 method1 = dict[methods[i]][ydata[0]]
@@ -241,7 +239,7 @@ def graphs(dict, title, xdata, ydata, xcol, ycol, xlabel, ylabel, conserved):
 
                 abs_err = np.abs(method1 - method2)
                 mean_abs_err = np.mean(abs_err)
-                axs[3].plot(t, abs_err, color=colors[i + j + 8], label=rf"{methods[i]} vs {methods[j]}: $\vec{{\epsilon}}(t)$ = {mean_abs_err:.6e}" )
+                axs[3].plot(t, abs_err, color=colors[i + j + 8], label=rf"{methods[i]} vs {methods[j]}: $\bar{{\epsilon}}$ = {mean_abs_err:.6e}" )
 
     axs[3].grid(True)
     axs[3].set_xlabel("t")
@@ -265,7 +263,7 @@ def main():
     else:
         sys.exit("Introduce 'python project.py h tf' or 'python project.py h t0 tf'")
     tspan = (t0, tf)
-       
+    
     p_name, p_mass = select_particle()
     V_sym = select_potential()
 
@@ -304,15 +302,16 @@ def main():
     )
 
     results = run_simulation(p, tspan, h)
+    quantities = p.conserved()
     
     titles = ["Trajectory y(x)", "Energies over time", "Phase-space", "Angular momentum over time"]
-    Exdata, Eydata = ["t", "t", "t"], ["E(t)", "V(t)", "T(t)"]
-    pxdata, pydata, pxcol, pycol = ["pos", "pos"], ["px", "py"], [0, 1], [0, 1] 
+    Exdata, Eydata = ["t", "t", "t"], ["E", "V", "T"]
+    p_xdata, p_ydata, p_xcol, p_ycol = ["pos", "pos"], ["px", "py"], [0, 1], [0, 1] 
 
-    graphs(results, titles[0], ["pos"], ["pos"], [0], [1], "x", "y(x)", p.conserved[0])
-    graphs(results, titles[1], Exdata, Eydata, [0], [0], "t", "Energies", p.conserved[1])
-    graphs(results, titles[2], pxdata, pydata, pxcol, pycol, "x, y", "px, py", p.conserved[2])
-    graphs(results, titles[3], ["t"], ["L"], [0], [0], "t", "Lz", p.conserved[3])
+    graphs(results, titles[0], ["pos"], ["pos"], [0], [1], "x", "y(x)", False)
+    graphs(results, titles[1], Exdata, Eydata, [0], [0], "t", "Energies", quantities[0])
+    graphs(results, titles[2], p_xdata, p_ydata, p_xcol, p_ycol, "x, y", "px, py", quantities[1])
+    graphs(results, titles[3], ["t"], ["Lz"], [0], [0], "t", "Lz", quantities[3])
 
 if __name__ == "__main__":
     main()
